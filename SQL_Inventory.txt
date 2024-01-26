@@ -1,0 +1,194 @@
+SET SERVEROUTPUT ON;
+--this allows Oracle to display the output statement on the screen
+--1
+--This script counts the number of products and prints a statement of the
+number of products being below/equal to/ above 10.
+DECLARE
+    product_count NUMBER;
+BEGIN
+   SELECT COUNT(product_id) INTO product_count
+   FROM PRODUCTS;
+   IF product_count >= 10 THEN
+    DBMS_OUTPUT.PUT_LINE('The number of products is greater than or equal
+to 10');
+   ELSE
+    DBMS_OUTPUT.PUT_LINE('The number of products is less than 10');
+END IF; END;
+/
+--2
+--This script states the average price and the count of products in the
+products table if it is greater than 10 products.
+DECLARE
+    product_count NUMBER;
+    avg_price     NUMBER;
+BEGIN
+   SELECT COUNT(product_id), AVG(price)
+   INTO product_count, avg_price
+   FROM PRODUCTS;
+   IF product_count >= 10 THEN
+    DBMS_OUTPUT.PUT_LINE('The count of products is: ' || product_count);
+    DBMS_OUTPUT.PUT_LINE('The average price is: $' || ROUND(avg_price,
+2));
+   ELSE
+    DBMS_OUTPUT.PUT_LINE('The number of products is less than 10');
+END IF; END;
+/
+--3
+-- this script adds the amount of products with a specific product ID.
+-- this script also tests out what happens to quantity when a specific
+order number is deleted from our records.
+-- 3(a)
+DECLARE
+    total_product_quantity NUMBER;
+BEGIN
+   SELECT SUM(QUANTITY)
+   INTO total_product_quantity
+
+   FROM ORDER_DETAILS
+   WHERE product_id = 1001;
+   IF total_product_quantity > 1
+   THEN
+    DBMS_OUTPUT.PUT_LINE('The product has more than 1 in quantity');
+   ELSE
+    DBMS_OUTPUT.PUT_LINE('The product only has 1 in quantity');
+   END IF;
+END; /
+--3(b)
+DELETE FROM ORDER_DETAILS
+WHERE order_number = 10068 AND product_id = 1001;
+--3(c)
+DECLARE
+    total_product_quantity NUMBER;
+BEGIN
+   SELECT SUM(QUANTITY)
+   INTO total_product_quantity
+   FROM ORDER_DETAILS
+   WHERE product_id = 1001;
+   IF total_product_quantity > 1
+   THEN
+    DBMS_OUTPUT.PUT_LINE('The product has more than 1 in quantity');
+   ELSE
+    DBMS_OUTPUT.PUT_LINE('The product only has 1 in quantity');
+   END IF;
+END; /
+--3(d)
+ROLLBACK;
+--4
+-- this script calculates the total quantity of a product when inputed a
+product_id by the user and checks if it has a quantity greater than 1
+SET DEFINE ON;
+DECLARE
+    total_product_quantity NUMBER;
+    user_product_id NUMBER := &product_id;
+BEGIN
+   SELECT SUM(quantity), product_id
+   INTO total_product_quantity, user_product_id
+   FROM ORDER_DETAILS
+   WHERE product_id = user_product_id;
+   IF total_product_quantity > 1 THEN
+      DBMS_OUTPUT.PUT_LINE('The product with product ID:' ||
+user_product_id || ' has more than 1 in quantity');
+   ELSIF total_product_quantity = 1 THEN
+
+      DBMS_OUTPUT.PUT_LINE('The product with product ID:' ||
+user_product_id || ' has only 1 in quantity');
+   END IF;
+EXCEPTION
+    WHEN OTHERS THEN
+        DBMS_OUTPUT.PUT_LINE('The product ID that was entered is
+invalid.');
+END;
+/
+--5
+--this block creates a cursor for a result set based on a price greater
+than $4.5.
+DECLARE
+    CURSOR product_cursor IS
+        SELECT product_name, brand, price
+        FROM products
+        WHERE price > 4.5
+        ORDER BY price DESC;
+    product_row product_cursor%ROWTYPE;
+BEGIN
+    FOR p IN product_cursor LOOP
+        DBMS_OUTPUT.PUT_LINE(p.product_name || ' | ' || p.brand || ' | '
+|| to_char(p.price, '$999.99') || ' | ');
+    END LOOP;
+END;
+/
+--6
+--this sproc deletes records from two tables when it is called and a
+compatible order number is specified
+CREATE OR REPLACE PROCEDURE delete_detail_ID(param_order_number NUMBER)
+AS
+BEGIN
+    DELETE
+    FROM order_details
+    WHERE order_number = param_order_number;
+    DELETE
+    FROM orders
+    WHERE order_number = param_order_number;
+    IF SQL%ROWCOUNT = 0 THEN
+        DBMS_OUTPUT.PUT_LINE('No order rows were deleted. May not be a
+valid order_number');
+    ELSIF SQL%ROWCOUNT > 0 THEN
+        DBMS_OUTPUT.PUT_LINE('Order ' || param_order_number|| ' has been
+fully deleted.');
+    END IF;
+COMMIT;
+
+END; /
+--First Call--
+CALL delete_detail_ID (10000);
+--Second and Third Calls--
+CALL delete_detail_ID (10000);
+BEGIN
+    delete_detail_ID (11111);
+END;
+/
+--7
+--this anonymous block of PL/SQL captures distinct coffee brands using
+bulk collect
+DECLARE
+    TYPE brand_table IS TABLE OF products.brand%TYPE;
+    product_brand    brand_table;
+BEGIN
+    SELECT DISTINCT brand
+    BULK COLLECT INTO product_brand
+    FROM products p
+    JOIN product_category pc
+        ON p.category_id = pc.category_id
+    WHERE pc.category_name = 'Coffee'
+    ORDER BY p.brand;
+    FOR i in 1.. product_brand.count LOOP
+        DBMS_OUTPUT.PUT_LINE('Brand number ' || i || ' : ' ||
+product_brand(i));
+    END LOOP;
+END;
+/
+--8
+--this function returns total number of orders the customer made
+CREATE OR REPLACE FUNCTION order_count
+(
+    param_customer_id   NUMBER
+)
+RETURN NUMBER
+AS
+    order_count NUMBER;
+BEGIN
+    SELECT COUNT(order_number)
+    INTO order_count
+    FROM orders
+    WHERE customer_id = param_customer_id;
+    RETURN order_count;
+END; /
+
+--test 1
+select customer_id, order_count(customer_id) from orders
+group by customer_id
+order by customer_id;
+--test 2
+select customer_id, order_count(customer_id) from orders
+where order_count(customer_id) > 1
+group by customer_id
+order by order_count(customer_id) desc, customer_id;
